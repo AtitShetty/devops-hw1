@@ -4,7 +4,7 @@
 
 ## Screencasts
 
-**1.** [Running ansible play to setup mini-vlc](https://youtu.be/CF4kdJWRzDM)
+**1.** [Running ansible play to setup mini-vlc](https://youtu.be/3uzOZu09ByU)
 
 **2.** [phpVirtualBox demo](https://youtu.be/SIMAH2WMZA0)
 
