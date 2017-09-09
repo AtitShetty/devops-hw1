@@ -1,0 +1,164 @@
+---
+- hosts: nodes
+  
+  tasks:
+    - name: Update and upgrade packages
+      become: true
+      apt:
+        upgrade: dist
+        update_cache: yes
+
+    - name: Install build-essential dkms unzip wget
+      package: name={{ item }} state=present
+      with_items:
+        - build-essential
+        - dkms
+        - wget
+        - unzip
+
+    - name: Reboot server
+      shell: sleep 2 && shutdown -r now
+      async: 1
+      poll: 0
+      become: yes
+      become_method: sudo
+      ignore_errors: true
+    
+    - name: Wait for server to start
+      local_action: wait_for host={{ inventory_hostname }} state=started port=22 timeout=600 connect_timeout=15 delay=120
+    
+    - name: Add oracle VB repository to source list
+      apt_repository:
+       repo: 'deb http://download.virtualbox.org/virtualbox/debian xenial contrib'
+       state: present
+
+    - name: Add oracle Oracle public key
+      apt_key:
+        url: https://www.virtualbox.org/download/oracle_vbox_2016.asc
+        state: present
+
+    - name: Update packages
+      apt:
+        update_cache: yes
+
+    - name: Install oracle vb
+      apt:
+        name: virtualbox-5.0
+        state: present
+
+    - name: Add system user to virtualbox group
+      user: 
+        name='ubuntu'
+        groups=vboxusers
+        append=yes
+
+
+    - name: Install dependencies for pghVirtualBox
+      package: name={{ item }} state=present
+      with_items:
+        - apache2
+        - php
+        - php-mysql
+        - libapache2-mod-php
+        - php-soap
+        - php-xml
+
+    - name: Download pgpVirtualBox zip
+      unarchive: 
+        remote_src: yes
+        src: 'https://sourceforge.net/projects/phpvirtualbox/files/phpvirtualbox-5.0-5.zip'
+        dest: /var/www/html
+
+    - name: Copy phpVirtualBox config files
+      command: mv /var/www/html/phpvirtualbox-5.0-5 /var/www/html/phpvirtualbox
+
+
+    - name: Set permission for phpvirtualbox directory
+      file:
+        path: /var/www/html/phpvirtualbox
+        mode: 0777
+        recurse: true
+
+    - name: Copy phpVirtualBox config files
+      copy:
+        src: /var/www/html/phpvirtualbox/config.php-example
+        dest: /var/www/html/phpvirtualbox/config.php
+        remote_src: true
+
+    - name:  Add username in config file
+      replace:
+        path: /var/www/html/phpvirtualbox/config.php
+        regexp: "(var.*username.*;)"
+        replace: "var $username = 'ubuntu';"
+
+    - name:  Add password in config file
+      replace:
+        path: /var/www/html/phpvirtualbox/config.php
+        regexp: "(var.*password.*;)"
+        replace: "var $password = 'bdb5e2b09bbcf05dc6ddfe67';"
+
+
+    - name:  Add username in config file
+      lineinfile:
+        path: /etc/default/virtualbox
+        line: 'VBOXWEB_USER=ubuntu'
+        insertbefore: BOF
+        create: yes
+        state: present        
+
+    - name: Restart all the services vboxweb-service
+      service: 
+       name: vboxweb-service
+       state: restarted
+
+    - name: Restart all the services vboxdrv
+      service: 
+        name: vboxdrv
+        state: restarted
+
+    - name: Restart all the services apache2
+      service: 
+        name: apache2
+        state: restarted
+
+    - name: Install vagrant
+      apt:
+        name: vagrant
+        state: present
+
+
+    - name: Create directory for ubuntu vm
+      file: 
+        path=/vagrant_vm/ubuntu32
+        state=directory
+
+    - name: Check that the Vagrantfile exists
+      stat:
+        path: /vagrant_vm/ubuntu32/Vagrantfile
+      register: stat_result
+
+    - name: Run vagrant init
+      command: vagrant init ubuntu/trusty32
+      args:
+        chdir: /vagrant_vm/ubuntu32
+      when: stat_result.stat.exists == False
+
+
+    - name: Add dns support
+      lineinfile:
+        path: /vagrant_vm/ubuntu32/Vagrantfile
+        insertbefore: '(end)$'
+        line: "{{ item }}"
+      with_items:
+        - 'config.vm.network "private_network", ip: "193.169.33.201"'
+        - 'config.vm.provider :virtualbox do |vb|'
+        - ' vb.customize ["modifyvm", :id, "--nictype1", "virtio" ]'
+        - ' vb.customize ["modifyvm", :id, "--nictype2", "virtio" ]'
+        - ' vb.customize ["modifyvm", :id, "--natdnshostresolver1", "on"]'
+        - ' vb.customize ["modifyvm", :id, "--natdnsproxy1", "on"] end'
+        
+
+    - name: Provision vagrant
+      command: vagrant up
+      args:
+        chdir: /vagrant_vm/ubuntu32
